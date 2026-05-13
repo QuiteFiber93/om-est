@@ -176,7 +176,7 @@ exportgraphics(gcf, 'Images/range_plot.png', 'Resolution',300)
 
 %% Batched Least Squares
 r0hat = [6990; 1; 1];
-v0hat = [1; 10; 1];
+v0hat = [1; 1; 1];
 x0hat = [r0hat; v0hat];
 
 dynamics = @(t, y) twobody_STM(t, y, mu);
@@ -273,9 +273,9 @@ P0_warm = inv(Lambda_warm);
 P0_warm = P0_warm + diag([1, 1, 1, 1E-2, 1E-2, 1E-2]);
 
 % Run filters from t = tmeas(N_warm) onward
-tmeas_post = tmeas(N_warm:end);
-meas_post  = measurements(N_warm:end, :);
-LST_post   = LST(N_warm:end);
+tmeas_post = tmeas(N_warm+1:end);
+meas_post  = measurements(N_warm+1:end, :);
+LST_post   = LST(N_warm+1:end);
 
 [xhat_ekf_warm, P_ekf_warm] = EKF(x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
                                   mu, obsv_lat, LST_post, R_obsv);

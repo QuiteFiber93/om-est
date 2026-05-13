@@ -84,7 +84,7 @@ for n = 1:maxiter
 
     % Updating guess
     guess = guess + delta_x;
-        old_cost = new_cost;
+    old_cost = new_cost;
     
 end
 
