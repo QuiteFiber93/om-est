@@ -207,8 +207,78 @@ P_mc = cov(mc_results);
 
 %% EKF 
 
+% Initial covariance — square of order of magnitude of initial guess error
+P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
+
+% Process noise covariance — high confidence in dynamics
+Q = eye(6) * 1E-8;
+
+% Run EKF
+[xhat_ekf, P_ekf] = EKF(x0hat, measurements, tmeas, P0, Q, R, mu, obsv_lat, LST, R_obsv);
+
+% Compute error vs truth (measured_states from ode89 above)
+ekf_error = measured_states - xhat_ekf;
+
+% Extract 3-sigma bounds
+sigma_bounds = zeros(length(tmeas), 6);
+for k = 1:length(tmeas)
+    sigma_bounds(k, :) = 3 * sqrt(diag(P_ekf(:, :, k)));
+end
+
+% Plot and log
+plot_ekf = true;
+if plot_ekf
+    plotting_ekf;
+end
+
 %% UKF
+
+P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
+Q  = eye(6) * 1E-8;
+
+% UKF tuning per Project 5 statement
+alpha = 1E-3;
+beta  = 2;     % optimal for Gaussian
+kappa = 0;
+
+% Run UKF — note @twobody is passed in so the local function can re-wrap it with mu
+[xhat_ukf, P_ukf] = UKF(@twobody, x0hat, measurements, tmeas, P0, Q, R, ...
+                        alpha, beta, kappa, mu, obsv_lat, LST, R_obsv);
+
+ukf_error = measured_states - xhat_ukf;
+
+sigma_bounds_ukf = zeros(length(tmeas), 6);
+for k = 1:length(tmeas)
+    sigma_bounds_ukf(k, :) = 3 * sqrt(diag(P_ukf(:, :, k)));
+end
+
+plot_ukf = true;
+if plot_ukf
+    plotting_ukf;
+end
 
 %% Warm starting EKF and UKF
 
-% Perform GLSDC for first ~50 time steps
+% Perform GLSDC for first ~30 time steps
+N_warm = 30;
+tmeas_warm = tmeas(1:N_warm);
+meas_warm  = measurements(1:N_warm, :);
+LST_warm   = LST(1:N_warm);
+
+[x0_warm, Lambda_warm] = glsdc(dynamics, x0hat, meas_warm, tol, R, ...
+                               tmeas_warm, maxiter, R_obsv, LST_warm, obsv_lat);
+P0_warm = inv(Lambda_warm);
+
+% Inflate slightly to avoid overconfidence from the batch
+P0_warm = P0_warm + diag([1, 1, 1, 1E-2, 1E-2, 1E-2]);
+
+% Run filters from t = tmeas(N_warm) onward
+tmeas_post = tmeas(N_warm:end);
+meas_post  = measurements(N_warm:end, :);
+LST_post   = LST(N_warm:end);
+
+[xhat_ekf_warm, P_ekf_warm] = EKF(x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
+                                  mu, obsv_lat, LST_post, R_obsv);
+
+[xhat_ukf_warm, P_ukf_warm] = UKF(@twobody, x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
+                                  alpha, beta, kappa, mu, obsv_lat, LST_post, R_obsv);

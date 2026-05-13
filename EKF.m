@@ -39,7 +39,7 @@ for k = 1:n_meas
 
         % Propagating state and covariance
         initial_state = [xhat_plus; P_plus(:)];
-        [~, state_prop] = ode45(@(t, y) combined_dynamics(t, y, Q, mu), tspan, initial_state, options);
+        [~, state_prop] = ode45(@(t, y) covar_dynamics(t, y, Q, mu), tspan, initial_state, options);
         next_step = state_prop(end, :)';
         xhat_minus = next_step(1:6);
         P_minus = reshape(next_step(7:42), 6, 6);
