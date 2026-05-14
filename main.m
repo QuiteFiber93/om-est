@@ -35,7 +35,7 @@ delim_dash = repelem('-', 70);
 
 %% Generating Measurements
 % Simulating true motion
-func = @(t, y) twobody(t, y, mu);
+func = @(t, y) twobody_J2(t, y, mu);
 options = odeset('RelTol',1E-10, 'AbsTol',1E-12);
 [~, measured_states] = ode45(func, tmeas, y0, options);
 
@@ -64,9 +64,26 @@ r0hat = [6990; 1; 1];
 v0hat = [1; 1; 1];
 x0hat = [r0hat; v0hat];
 
+% BLS and GLSDC use a short arc only -- Gauss-Newton diverges from the cold
+% guess over the full 3000 s arc (the linearization is invalid that far out).
+N_short     = 30;
+tmeas_short = tmeas(1:N_short);
+meas_short  = measurements(1:N_short, :);
+LST_short   = LST(1:N_short);
+
 dynamics = @(t, y) twobody_STM(t, y, mu);
-[bls_estimate, Lambda_bls, final_cost] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
+[bls_estimate, Lambda_bls, final_cost] = bls(dynamics, x0hat, meas_short, R, ...
+                                             tmeas_short, R_obsv, LST_short, obsv_lat);
 P_bls = inv(Lambda_bls);
+
+%% GLSDC
+
+maxiter = 10;
+tol = 1E-3;
+dynamics = @(t, y) twobody_STM(t, y, mu);
+[glsdc_estimate, Lambda_glsdc] = glsdc(dynamics, x0hat, meas_short, tol, R, ...
+                                       tmeas_short, maxiter, R_obsv, LST_short, obsv_lat);
+P_glsdc = inv(Lambda_glsdc);
 
 %% RLS w FF
 
@@ -76,14 +93,6 @@ dynamics = @(t, y) twobody_STM(t, y, mu);
                                     tmeas, maxiter, R_obsv, LST, obsv_lat);
 P_rls = inv(Lambda_rls);
 
-%% GLSDC
-
-maxiter = 10;
-tol = 1E-3;
-dynamics = @(t, y) twobody_STM(t, y, mu);
-[glsdc_estimate, Lambda_glsdc] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
-P_glsdc = inv(Lambda_glsdc);
-
 %% Monte Carlo GLSDC Method
 nruns = 1000;
 mc_results = zeros(nruns, 6);
@@ -92,7 +101,8 @@ measurements_orig = measurements;
 
 for n = 1:nruns
     measurements = generate_measurements(h_cords, R, length(tmeas));
-    [mc_estimate, Lambda_mc] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
+    [mc_estimate, Lambda_mc] = glsdc(dynamics, x0hat, measurements(1:N_short, :), tol, R, ...
+                                     tmeas_short, maxiter, R_obsv, LST_short, obsv_lat);
     mc_results(n, :) = mc_estimate';
 end
 
@@ -115,7 +125,8 @@ mc_rmse_pos = sqrt(mean(sum(mc_err(:,1:3).^2, 2)));
 P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
 
 % Process noise covariance — high confidence in dynamics
-Q = eye(6) * 1E-8;
+% Q = eye(6) * 1E-8;
+Q = diag([1e-9, 1e-9, 1e-9, 1e-6, 1e-6, 1e-6]);
 
 % Run EKF
 [xhat_ekf, P_ekf] = EKF(x0hat, measurements, tmeas, P0, Q, R, mu, obsv_lat, LST, R_obsv);
@@ -130,7 +141,7 @@ for k = 1:length(tmeas)
 end
 
 % Plot and log
-plot_ekf = true;
+plot_ekf = false;
 if plot_ekf
     plotting_ekf;
 end
@@ -138,7 +149,8 @@ end
 %% UKF
 
 P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
-Q  = eye(6) * 1E-8;
+% Q  = eye(6) * 1E-8;
+Q = diag([1e-9, 1e-9, 1e-9, 1e-6, 1e-6, 1e-6]);
 
 % UKF tuning per Project 5 statement
 alpha = 1E-3;
@@ -156,7 +168,7 @@ for k = 1:length(tmeas)
     sigma_bounds_ukf(k, :) = 3 * sqrt(diag(P_ukf(:, :, k)));
 end
 
-plot_ukf = true;
+plot_ukf = false;
 if plot_ukf
     plotting_ukf;
 end
@@ -164,7 +176,7 @@ end
 %% Warm starting EKF and UKF
 
 % Perform GLSDC for first ~30 time steps
-N_warm = 30;
+N_warm = 40;
 tmeas_warm = tmeas(1:N_warm);
 meas_warm  = measurements(1:N_warm, :);
 LST_warm   = LST(1:N_warm);
@@ -173,21 +185,27 @@ LST_warm   = LST(1:N_warm);
                                tmeas_warm, maxiter, R_obsv, LST_warm, obsv_lat);
 P0_warm = inv(Lambda_warm);
 
+prop_opts = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
+[~, x0_warm_prop] = ode45(@(t,y) twobody(t,y,mu), ...
+                          [tmeas(1), tmeas(N_warm+1)], x0_warm, prop_opts);
+x_warm_start = x0_warm_prop(end, :)';
+
 % Inflate slightly to avoid overconfidence from the batch
-P0_warm = P0_warm + diag([1, 1, 1, 1E-2, 1E-2, 1E-2]);
+P0_warm = diag([1, 1, 1, 1E-2, 1E-2, 1E-2]);
 
 % Run filters from t = tmeas(N_warm) onward
 tmeas_post = tmeas(N_warm+1:end);
 meas_post  = measurements(N_warm+1:end, :);
 LST_post   = LST(N_warm+1:end);
 
-[xhat_ekf_warm, P_ekf_warm] = EKF(x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
+[xhat_ekf_warm, P_ekf_warm] = EKF(x_warm_start, meas_post, tmeas_post, P0_warm, Q, R, ...
                                   mu, obsv_lat, LST_post, R_obsv);
 
-[xhat_ukf_warm, P_ukf_warm] = UKF(@twobody, x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
+[xhat_ukf_warm, P_ukf_warm] = UKF(@twobody, x_warm_start, meas_post, tmeas_post, P0_warm, Q, R, ...
                                   alpha, beta, kappa, mu, obsv_lat, LST_post, R_obsv);
 
 %% Trajectory RMSE comparison
+
 options = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
 
 % Propagate the initial-state estimators forward over tmeas
