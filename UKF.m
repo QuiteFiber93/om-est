@@ -1,33 +1,36 @@
 function [xhat, P] = UKF(dynamics, x0, ytilde, tmeas, P0, Q, R, alpha, beta, kappa, mu, obsv_lat, LST, R_obsv)
 
 % Storage of outputs
-xhat = zeros(length(tmeas), 6); % Contains history of state estiamtes at kth row
+xhat = zeros(length(tmeas), 6); % Contains history of state estimates at kth row
 P = zeros(6, 6, length(tmeas)); % Contains history of state estimate covariance
 
 % Establishing dimensions
 n = size(x0, 1);
-q = size(Q, 1);
 m = size(R, 1);
 n_meas = size(ytilde, 1);
-L = n + q + m;
+
+% Augmented dimension: state + measurement noise only.
+% Process noise is additive (consistent with the EKF's Pdot = F P + P F' + Q),
+% so it is NOT carried in the augmented state. Instead it enters as an
+% explicit Q_d added to the predicted covariance below. The measurement
+% noise block IS augmented, per the professor's Fig. 3 formulation.
+L = n + m;
 
 % Initializing variables
-% Initial estimate and covariance
 xhat_k = x0;
 P_k = P0;
 
-% Augmenting to include noise
-xhat_k_aug = [xhat_k; zeros(n, 1); zeros(m, 1)];
-P_k_aug = blkdiag(P_k, Q, R);
+% Augmenting to include measurement noise
+xhat_k_aug = [xhat_k; zeros(m, 1)];
+P_k_aug = blkdiag(P_k, R);
 
 % Scaling Parameters
-lambda = alpha^2 * (L + kappa)- L;
+lambda = alpha^2 * (L + kappa) - L;
 gamma = sqrt(L + lambda);
 
 % UKF Weights
-n_sigma = 2*L+1; % Total number of sigma points in UKF
+n_sigma = 2*L + 1; % Total number of sigma points
 
-% Array to handle the weights for mean and covariance for each sigma point
 W_mean = zeros(n_sigma, 1);
 W_cov = zeros(n_sigma, 1);
 
@@ -43,93 +46,98 @@ end
 
 % Loop for sequential estimation
 for k = 1:n_meas
-    % Generating sigma_points
-    % Using Cholesky decomposition to obtain sqrt(P) using P = S*S'
-    % while making P symmetric for stability
-    P_k_aug = 0.5*(P_k_aug + P_k_aug');
+    % Generating sigma points
+    % Cholesky decomposition for sqrt(P), symmetrized for stability
+    P_k_aug = 0.5 * (P_k_aug + P_k_aug');
     S = chol(P_k_aug, "lower");
 
-    % Generating cloud of sigma points
+    % Cloud of sigma points
     Chi_k = [xhat_k_aug, xhat_k_aug + gamma*S, xhat_k_aug - gamma*S];
 
-    % Extracting state variables 
+    % Extracting state variables
     Chi_x_k = Chi_k(1:n, :);
 
-    % Extracting process noise
-    Chi_w_k = Chi_k(n+1:n+q, :);
+    % Extracting measurement-noise variables
+    Chi_v_k = Chi_k(n+1:end, :);
 
-    % Extracting noise variables
-    Chi_v_k = Chi_k(n+q+1:end, :);
-
-    % Propogating state of each sigma point from previous step
-    % If this is the first step, there is no propogation 
-    % Instead, moving directly to update step
+    % Propagating state of each sigma point from previous step.
+    % First step has no propagation -- go straight to the update.
     if k == 1
         Chi_x_prop = Chi_x_k;
+        Q_d = zeros(n, n);   % no propagation interval, no process noise yet
     else
+        % First-order discretization of the continuous-time process noise
+        % spectral density Q over the propagation interval. This makes the
+        % UKF's per-step process noise match what the EKF accumulates by
+        % integrating Pdot = F P + P F' + Q. (Van Loan's method would give
+        % the exact Q_d if higher fidelity were needed.)
+        dt = tmeas(k) - tmeas(k-1);
+        Q_d = Q * dt;
+
         Chi_x_prop = zeros(n, n_sigma);
         options = odeset('RelTol', 1E-8, 'AbsTol', 1E-10);
         twobody_ode = @(t, y) dynamics(t, y, mu);
         for l = 1:n_sigma
             [~, simulated_trajectory] = ode45(twobody_ode, tmeas(k-1:k), Chi_x_k(:, l), options);
-            Chi_x_prop(:, l) = simulated_trajectory(end, :)' + Chi_w_k(:, l);
+            Chi_x_prop(:, l) = simulated_trajectory(end, :)';
         end
     end
-    
-    % Computing the mean of the sigma points to produce xhat_minus
-    % This multiplies the n-th column of Chi_x_prop by the n-th element of
-    % W_mean with dimensions 
-    % -> (6x2L+1) * (2L+1,1) = (6, 1)
+
+    % Mean of the propagated sigma points -> xhat_minus
+    % (6 x n_sigma) * (n_sigma x 1) = (6 x 1)
     xhat_minus = Chi_x_prop * W_mean(:);
 
-    % Computing the covariance of the sigma points to produce P_minus
+    % Covariance of the propagated sigma points, plus additive process noise Q_d
     P_minus = zeros(n, n);
     for l = 1:n_sigma
         P_minus = P_minus + W_cov(l) * (Chi_x_prop(:, l) - xhat_minus) * (Chi_x_prop(:, l) - xhat_minus)';
     end
+    P_minus = P_minus + Q_d;
 
-    % Computing expected observations at each point cloud
+    % Expected observation at each sigma point
     Gamma_k = zeros(m, n_sigma);
     for l = 1:n_sigma
-        % Converting from state to measurements
         r_sigma = Chi_x_prop(1:3, l);
         rho_inertial_l = inertial_range(r_sigma', R_obsv, obsv_lat, LST(k));
         rho_obsv_l = observer_range(rho_inertial_l, obsv_lat, LST(k));
         y_sigma = horizontal_coordinates(rho_obsv_l);
 
-        % Adding noise
+        % Measurement noise enters through the augmented v-block
         Gamma_k(:, l) = y_sigma' + Chi_v_k(:, l);
     end
 
-    % Obtaining yhat_minus as the mean of the expected observations
+    % Mean of the expected observations
     yhat_minus = Gamma_k * W_mean(:);
 
-    % Measurement update equations
-    % P^eyey is the covaraince of the expected observations above
-    % P^exey is the cross-covariance
+    % Measurement-update covariances
+    % P_yy: covariance of expected observations
+    % P_xy: state/observation cross-covariance
     P_yy = zeros(m, m);
     P_xy = zeros(n, m);
     for l = 1:n_sigma
         x_err = Chi_x_prop(:, l) - xhat_minus;
-        y_err = (Gamma_k(:, l) - yhat_minus);
-        
+        y_err = Gamma_k(:, l) - yhat_minus;
+
         P_yy = P_yy + W_cov(l) * (y_err * y_err');
         P_xy = P_xy + W_cov(l) * (x_err * y_err');
     end
 
-    % Calculating gain
+    % Gain
     K_k = P_xy / P_yy;
 
-    % updating state estimate and covariance
+    % State and covariance update
     xhat_k = xhat_minus + K_k * (ytilde(k, :)' - yhat_minus);
     P_k = P_minus - K_k * P_yy * K_k';
 
-    % Storing state estimate and covariance in history
+    % Symmetrize the updated covariance for stability
+    P_k = 0.5 * (P_k + P_k');
+
+    % Store
     xhat(k, :) = xhat_k';
     P(:, :, k) = P_k;
 
-    % Updating augmented values for iteration
-    xhat_k_aug = [xhat_k; zeros(n, 1); zeros(m, 1)];
-    P_k_aug = blkdiag(P_k, Q, R);
+    % Rebuild augmented quantities for the next iteration
+    xhat_k_aug = [xhat_k; zeros(m, 1)];
+    P_k_aug = blkdiag(P_k, R);
 end
 end

@@ -43,7 +43,7 @@ for k = 1:n_meas
         next_step = state_prop(end, :)';
         xhat_minus = next_step(1:6);
         P_minus = reshape(next_step(7:42), 6, 6);
-
+        P_minus = 0.5 * (P_minus + P_minus');
     end
 end
 end

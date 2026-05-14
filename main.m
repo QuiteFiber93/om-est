@@ -17,7 +17,7 @@ LST0 = deg2rad(10); % Observer local siderial time
 tspan = [0, 3000];
 
 % time values for measurements
-delta_t = 10;
+delta_t = 5;
 tmeas = 0:delta_t:3000;
 
 % Computing LST at tmeas
@@ -69,6 +69,12 @@ dynamics = @(t, y) twobody_STM(t, y, mu);
 P_bls = inv(Lambda_bls);
 
 %% RLS w FF
+
+lambda_ff = 0.99;
+dynamics = @(t, y) twobody_STM(t, y, mu);
+[rls_estimate, Lambda_rls] = rls_ff(dynamics, x0hat, measurements, lambda_ff, R, ...
+                                    tmeas, maxiter, R_obsv, LST, obsv_lat);
+P_rls = inv(Lambda_rls);
 
 %% GLSDC
 
@@ -180,3 +186,50 @@ LST_post   = LST(N_warm+1:end);
 
 [xhat_ukf_warm, P_ukf_warm] = UKF(@twobody, x0_warm, meas_post, tmeas_post, P0_warm, Q, R, ...
                                   alpha, beta, kappa, mu, obsv_lat, LST_post, R_obsv);
+
+%% Trajectory RMSE comparison
+options = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
+
+% Propagate the initial-state estimators forward over tmeas
+[~, bls_traj]   = ode45(@(t,y) twobody(t,y,mu), tmeas, bls_estimate,   options);
+[~, rls_traj]   = ode45(@(t,y) twobody(t,y,mu), tmeas, rls_estimate,   options);
+[~, glsdc_traj] = ode45(@(t,y) twobody(t,y,mu), tmeas, glsdc_estimate, options);
+
+% EKF and UKF already give full state histories
+% xhat_ekf, xhat_ukf are already N x 6
+
+% Truth: measured_states (already integrated in main.m over tmeas)
+[bls_comp,   bls_pos,   bls_vel]   = trajectory_rmse(bls_traj,   measured_states);
+[rls_comp,   rls_pos,   rls_vel]   = trajectory_rmse(rls_traj,   measured_states);
+[glsdc_comp, glsdc_pos, glsdc_vel] = trajectory_rmse(glsdc_traj, measured_states);
+[ekf_comp,   ekf_pos,   ekf_vel]   = trajectory_rmse(xhat_ekf,   measured_states);
+[ukf_comp,   ukf_pos,   ukf_vel]   = trajectory_rmse(xhat_ukf,   measured_states);
+
+% Assemble into a table
+estimator   = {'BLS'; 'RLS-FF'; 'GLSDC'; 'EKF'; 'UKF'};
+rmse_pos    = [bls_pos;   rls_pos;   glsdc_pos;   ekf_pos;   ukf_pos];
+rmse_vel    = [bls_vel;   rls_vel;   glsdc_vel;   ekf_vel;   ukf_vel];
+rmse_table  = table(estimator, rmse_pos, rmse_vel);
+disp(rmse_table)
+
+%% Warm-started filter RMSE (GLSDC-seeded)
+% Warm filters cover only tmeas(N_warm+1:end), so slice truth to match.
+measured_states_post = measured_states(N_warm+1:end, :);
+
+[ekf_warm_comp, ekf_warm_pos, ekf_warm_vel] = trajectory_rmse(xhat_ekf_warm, measured_states_post);
+[ukf_warm_comp, ukf_warm_pos, ukf_warm_vel] = trajectory_rmse(xhat_ukf_warm, measured_states_post);
+
+% Cold EKF/UKF scored over the SAME tail window, for an apples-to-apples
+% warm-vs-cold comparison (removes the window-length confound: the warm
+% filters skip the early transient by construction).
+xhat_ekf_tail = xhat_ekf(N_warm+1:end, :);
+xhat_ukf_tail = xhat_ukf(N_warm+1:end, :);
+[ekf_tail_comp, ekf_tail_pos, ekf_tail_vel] = trajectory_rmse(xhat_ekf_tail, measured_states_post);
+[ukf_tail_comp, ukf_tail_pos, ukf_tail_vel] = trajectory_rmse(xhat_ukf_tail, measured_states_post);
+
+% Comparison table over the tail window
+estimator_tail = {'EKF (cold, tail)'; 'EKF (warm)'; 'UKF (cold, tail)'; 'UKF (warm)'};
+rmse_pos_tail  = [ekf_tail_pos; ekf_warm_pos; ukf_tail_pos; ukf_warm_pos];
+rmse_vel_tail  = [ekf_tail_vel; ekf_warm_vel; ukf_tail_vel; ukf_warm_vel];
+rmse_table_warm = table(estimator_tail, rmse_pos_tail, rmse_vel_tail);
+disp(rmse_table_warm)
