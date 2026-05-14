@@ -58,121 +58,6 @@ rho_true_motion = inertial_range(true_motion(:, 1:3), R_obsv, obsv_lat, LST_true
 rho_obsv_true_motion = observer_range(rho_true_motion, obsv_lat, LST_true);
 h_cords_true_motion = horizontal_coordinates(rho_obsv_true_motion);
 
-% Figure Plotting true trajectory
-% Creating subplots for x, y, and z
-fig = tiledlayout(3, 1);
-ax1 = nexttile;
-plot(ax1, t, true_motion(:, 1))
-ylabel('x(t) (km)')
-
-ax2 = nexttile;
-plot(ax2, t, true_motion(:, 2))
-ylabel('y(t) (km)')
-
-ax3 = nexttile;
-plot(ax3, t, true_motion(:, 3))
-ylabel('z(t) (km)')
-xlabel('t (s)')
-linkaxes([ax1, ax2, ax3], 'x')
-title(fig, 'Earth Fixed Position');
-
-exportgraphics(gcf, 'Images/body_fixed_pos.png','Resolution',300)
-
-% Plotting x, y, and z velocities in subplots and saving the figure
-fig = tiledlayout(3, 1);
-ax1 = nexttile;
-plot(ax1, t, true_motion(:, 4))
-ylabel('xdot(t) (km/s)')
-
-ax2 = nexttile;
-plot(ax2, t, true_motion(:, 5))
-ylabel('ydot(t) (km/s)')
-
-ax3 = nexttile;
-plot(ax3, t, true_motion(:, 6))
-ylabel('zdot(t) (km/s)')
-xlabel('t (s)')
-title(fig, 'Earth Fixed Velocity');
-
-exportgraphics(gcf, 'Images/body_fixed_vel.png','Resolution',300)
-
-figure
-% converting true trajectory from spherical (horizontal) frame to cartesian
-rho_true = h_cords_true_motion(:, 1);
-az_true = h_cords_true_motion(:, 2);
-el_true = h_cords_true_motion(:, 3);
-[x_obsv, y_obsv, z_obsv] = sph2cart(az_true, el_true, rho_true);
-plot3(x_obsv, y_obsv, z_obsv, 'DisplayName','True Trajectory');
-hold on
-[x_meas, y_meas, z_meas] = sph2cart(measurements(:, 2), measurements(:, 3), measurements(:, 1));
-scatter3(x_meas, y_meas, z_meas, 10, 'filled', 'DisplayName', 'Measured Positions');
-hold off
-title('True Trajectory vs Measured States')
-grid()
-legend('Location','northeast')
-xlabel('x (km)')
-ylabel('y (km)')
-zlabel('z (km)')
-
-% Saving plot
-exportgraphics(gca, 'Images/measurements.png','Resolution',300)
-
-% Plotting x, y, z trajectory relative to the observer vs time and
-% overlaying measurements
-figure;
-ax1 = subplot(3, 1, 1);
-hold on
-plot(ax1, t, x_obsv, 'DisplayName','True')
-scatter(ax1, tmeas, x_meas, 10, 'filled', 'DisplayName','Measured')
-hold off
-ylabel('x(t) (km)')
-legend('Location','southeast')
-
-ax2 = subplot(3, 1, 2);
-hold on
-plot(ax2, t, y_obsv, 'DisplayName','True')
-scatter(ax2, tmeas, y_meas, 10, 'filled', 'DisplayName','Measured')
-hold off
-ylabel('y(t) (km)')
-legend('Location','southeast')
-
-ax3 = subplot(3, 1, 3);
-hold on
-plot(ax3, t, z_obsv, 'DisplayName','True')
-scatter(ax3, tmeas, z_meas, 10, 'filled', 'DisplayName','Measured')
-hold off
-ylabel('z(t) (km)')
-xlabel('t (s)')
-legend('Location','southeast')
-
-sgtitle('Position of Satellite Relative to Observer')
-exportgraphics(gcf, 'Images/cartesian_pos_measurements.png', 'Resolution',300)
-
-% Creating a figure which shows the altitude and azimuth of the satellite
-% overhead from frame of observer
-figure
-polarplot(az_true, 90 - rad2deg(el_true), 'DisplayName','True Trajectory')
-hold on
-polarscatter(measurements(:, 2), 90 - rad2deg(measurements(:, 3)), 7, 'filled', 'DisplayName','Measurements')
-hold off
-title('Polar Plot for Altitude and Azimuth')
-rlim([0, 90])
-ax = gca;
-ax.RTick = 0:30:90;
-ax.RTickLabel = {'90°', '60°', '30°', '0°'};
-exportgraphics(gcf, 'Images/alt_az_plot.png', 'Resolution',300)
-
-% Plotting Range vs Range Measurements
-figure
-plot(t, rho_true, 'DisplayName','True Range')
-hold on
-scatter(tmeas, measurements(:, 1), 10, 'filled', 'DisplayName','Range Measurements')
-hold off
-title('True Range vs Range Measurements')
-xlabel('t (s)')
-ylabel('Range (km)')
-legend()
-exportgraphics(gcf, 'Images/range_plot.png', 'Resolution',300)
 
 %% Batched Least Squares
 r0hat = [6990; 1; 1];
@@ -182,6 +67,8 @@ x0hat = [r0hat; v0hat];
 dynamics = @(t, y) twobody_STM(t, y, mu);
 [bls_estimate, Lambda_bls, final_cost] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
 P_bls = inv(Lambda_bls);
+
+%% RLS w FF
 
 %% GLSDC
 
