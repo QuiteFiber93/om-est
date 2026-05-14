@@ -180,8 +180,8 @@ v0hat = [1; 1; 1];
 x0hat = [r0hat; v0hat];
 
 dynamics = @(t, y) twobody_STM(t, y, mu);
-[bls_estimate, Lambda_bls] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
-P_bls = inv(Lambda);
+[bls_estimate, Lambda_bls, final_cost] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
+P_bls = inv(Lambda_bls);
 
 %% GLSDC
 
@@ -189,7 +189,7 @@ maxiter = 10;
 tol = 1E-3;
 dynamics = @(t, y) twobody_STM(t, y, mu);
 [glsdc_estimate, Lambda_glsdc] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
-P_glsdc = inv(Lambda);
+P_glsdc = inv(Lambda_glsdc);
 
 %% Monte Carlo GLSDC Method
 nruns = 1000;
