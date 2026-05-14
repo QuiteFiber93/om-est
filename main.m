@@ -195,6 +195,8 @@ P_glsdc = inv(Lambda);
 nruns = 1000;
 mc_results = zeros(nruns, 6);
 
+measurements_orig = measurements;
+
 for n = 1:nruns
     measurements = generate_measurements(h_cords, R, length(tmeas));
     [mc_estimate, Lambda] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
@@ -204,6 +206,15 @@ end
 % Calculating mean and covariance of estimates from monte carlo runs
 monte_carlo_avg = mean(mc_results)';
 P_mc = cov(mc_results);
+
+measurements = measurements_orig;
+
+% Error statistics
+mc_err = mc_results - y0';
+mc_mean = mean(mc_err);
+mc_median = median(mc_err);
+mc_rmse = sqrt(mean(mc_err.^2));
+mc_rmse_pos = sqrt(mean(sum(mc_err(:,1:3).^2, 2)));
 
 %% EKF 
 

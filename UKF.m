@@ -45,6 +45,8 @@ end
 for k = 1:n_meas
     % Generating sigma_points
     % Using Cholesky decomposition to obtain sqrt(P) using P = S*S'
+    % while making P symmetric for stability
+    P_k_aug = 0.5*(P_k_aug + P_k_aug');
     S = chol(P_k_aug, "lower");
 
     % Generating cloud of sigma points
