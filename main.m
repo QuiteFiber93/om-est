@@ -37,7 +37,7 @@ delim_dash = repelem('-', 70);
 % Simulating true motion
 func = @(t, y) twobody(t, y, mu);
 options = odeset('RelTol',1E-10, 'AbsTol',1E-12);
-[~, measured_states] = ode89(func, tmeas, y0, options);
+[~, measured_states] = ode45(func, tmeas, y0, options);
 
 % Generating inertial range vector
 rho = inertial_range(measured_states(:, 1:3), R_obsv, obsv_lat, LST);
@@ -180,7 +180,7 @@ v0hat = [1; 1; 1];
 x0hat = [r0hat; v0hat];
 
 dynamics = @(t, y) twobody_STM(t, y, mu);
-[bls_estimate, Lambda] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
+[bls_estimate, Lambda_bls] = bls(dynamics, x0hat, measurements, R, tmeas, R_obsv, LST, obsv_lat);
 P_bls = inv(Lambda);
 
 %% GLSDC
@@ -188,7 +188,7 @@ P_bls = inv(Lambda);
 maxiter = 10;
 tol = 1E-3;
 dynamics = @(t, y) twobody_STM(t, y, mu);
-[glsdc_estimate, Lambda] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
+[glsdc_estimate, Lambda_glsdc] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
 P_glsdc = inv(Lambda);
 
 %% Monte Carlo GLSDC Method
@@ -199,7 +199,7 @@ measurements_orig = measurements;
 
 for n = 1:nruns
     measurements = generate_measurements(h_cords, R, length(tmeas));
-    [mc_estimate, Lambda] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
+    [mc_estimate, Lambda_mc] = glsdc(dynamics, x0hat, measurements, tol, R, tmeas, maxiter, R_obsv, LST, obsv_lat);
     mc_results(n, :) = mc_estimate';
 end
 
@@ -227,7 +227,7 @@ Q = eye(6) * 1E-8;
 % Run EKF
 [xhat_ekf, P_ekf] = EKF(x0hat, measurements, tmeas, P0, Q, R, mu, obsv_lat, LST, R_obsv);
 
-% Compute error vs truth (measured_states from ode89 above)
+% Compute error vs truth (measured_states from ode45 above)
 ekf_error = measured_states - xhat_ekf;
 
 % Extract 3-sigma bounds
