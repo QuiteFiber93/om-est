@@ -49,14 +49,15 @@ exportgraphics(gcf, 'Images/fig1_measurements.png', 'Resolution', 300)
 %% Figure 2: EKF vs UKF Position Error with 3-sigma bounds
 figure('Position', [100 100 900 600])
 labels = {'x', 'y', 'z'};
-
+ekf_hybrid_err = measured_states(N_warm+1:end, :) - xhat_ekf_warm;
+ukf_hybrid_err = measured_states(N_warm+1:end, :) - xhat_ukf_warm;
 for i = 1:3
     % EKF (left column)
     subplot(3, 2, 2*i - 1)
     hold on
-    plot(tmeas, ekf_error(:, i), 'b', 'LineWidth', 0.8)
-    plot(tmeas,  sigma_bounds(:, i), 'r--', 'LineWidth', 1)
-    plot(tmeas, -sigma_bounds(:, i), 'r--', 'LineWidth', 1)
+    plot(tmeas(N_warm+1:end), ekf_hybrid_err(:, i), 'b', 'LineWidth', 0.8)
+    plot(tmeas(N_warm+1:end), ekf_hybrid_err(:, i) + sigma_bounds(N_warm+1:end, i), 'r--', 'LineWidth', 1)
+    plot(tmeas(N_warm+1:end), ekf_hybrid_err(:, i) - sigma_bounds(N_warm+1:end, i), 'r--', 'LineWidth', 1)
     hold off
     ylabel(sprintf('\\Delta%s (km)', labels{i}))
     grid on
@@ -69,9 +70,9 @@ for i = 1:3
     % UKF (right column)
     subplot(3, 2, 2*i)
     hold on
-    plot(tmeas, ukf_error(:, i), 'b', 'LineWidth', 0.8)
-    plot(tmeas,  sigma_bounds_ukf(:, i), 'r--', 'LineWidth', 1)
-    plot(tmeas, -sigma_bounds_ukf(:, i), 'r--', 'LineWidth', 1)
+    plot(tmeas(N_warm+1:end), ukf_hybrid_err(:, i), 'b', 'LineWidth', 0.8)
+    plot(tmeas(N_warm+1:end), ukf_hybrid_err(:, i) + sigma_bounds_ukf(N_warm+1:end, i), 'r--', 'LineWidth', 1)
+    plot(tmeas(N_warm+1:end), ukf_hybrid_err(:, i) - sigma_bounds_ukf(N_warm+1:end, i), 'r--', 'LineWidth', 1)
     hold off
     grid on
     if i == 1
@@ -107,8 +108,8 @@ semilogy(tmeas, rss_rls,   'm',   'LineWidth', 1.2, 'DisplayName', 'RLS-FF')
 semilogy(tmeas, rss_glsdc, 'g',   'LineWidth', 1.2, 'DisplayName', 'GLSDC')
 semilogy(tmeas, rss_ekf,   'b',   'LineWidth', 1.2, 'DisplayName', 'EKF')
 semilogy(tmeas, rss_ukf,   'r',   'LineWidth', 1.2, 'DisplayName', 'UKF')
-semilogy(tmeas_post, rss_ekf_warm, 'b--', 'LineWidth', 1.2, 'DisplayName', 'EKF (warm)')
-semilogy(tmeas_post, rss_ukf_warm, 'r--', 'LineWidth', 1.2, 'DisplayName', 'UKF (warm)')
+semilogy(tmeas_post, rss_ekf_warm, 'b--', 'LineWidth', 1.2, 'DisplayName', 'EKF (hybrid)')
+semilogy(tmeas_post, rss_ukf_warm, 'r--', 'LineWidth', 1.2, 'DisplayName', 'UKF (hybrid)')
 hold off
 
 xlabel('Time (s)')
@@ -138,8 +139,8 @@ grid on
 
 % --- Right: cold vs warm, tail window (apples to apples) ---
 subplot(1, 2, 2)
-names_warm = categorical({'EKF (cold)', 'EKF (warm)', 'UKF (cold)', 'UKF (warm)'});
-names_warm = reordercats(names_warm, {'EKF (cold)', 'EKF (warm)', 'UKF (cold)', 'UKF (warm)'});
+names_warm = categorical({'EKF (cold)', 'EKF (hybrid)', 'UKF (cold)', 'UKF (hybrid)'});
+names_warm = reordercats(names_warm, {'EKF (cold)', 'EKF (hybrid)', 'UKF (cold)', 'UKF (hybrid)'});
 pos_warm   = [ekf_tail_pos; ekf_warm_pos; ukf_tail_pos; ukf_warm_pos];
 vel_warm   = [ekf_tail_vel; ekf_warm_vel; ukf_tail_vel; ukf_warm_vel];
 

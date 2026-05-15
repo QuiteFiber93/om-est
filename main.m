@@ -122,7 +122,7 @@ mc_rmse_pos = sqrt(mean(sum(mc_err(:,1:3).^2, 2)));
 %% EKF 
 
 % Initial covariance — square of order of magnitude of initial guess error
-P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
+P0 = diag([3E5, 3E5, 3E5, 3E1, 3E1, 3E1]);
 
 % Process noise covariance — high confidence in dynamics
 % Q = eye(6) * 1E-8;
@@ -148,7 +148,7 @@ end
 
 %% UKF
 
-P0 = diag([1E6, 1E6, 1E6, 1E2, 1E2, 1E2]);
+P0 = diag([3E5, 3E5, 3E5, 3E1, 3E1, 3E1]);
 % Q  = eye(6) * 1E-8;
 Q = diag([1e-9, 1e-9, 1e-9, 1e-6, 1e-6, 1e-6]);
 
