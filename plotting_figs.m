@@ -113,7 +113,7 @@ hold off
 
 xlabel('Time (s)')
 ylabel('RSS Position Error (km)')
-title('Position Estimation Convergence — All Methods')
+title('Estimator Convergence Under Poor Initialization')
 legend('Location', 'northeast')
 grid on
 

@@ -79,7 +79,7 @@ P_bls = inv(Lambda_bls);
 %% GLSDC
 
 maxiter = 10;
-tol = 1E-3;
+tol = 1E-5;
 dynamics = @(t, y) twobody_STM(t, y, mu);
 [glsdc_estimate, Lambda_glsdc] = glsdc(dynamics, x0hat, meas_short, tol, R, ...
                                        tmeas_short, maxiter, R_obsv, LST_short, obsv_lat);
