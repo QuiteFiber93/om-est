@@ -66,7 +66,7 @@ x0hat = [r0hat; v0hat];
 
 % BLS and GLSDC use a short arc only -- Gauss-Newton diverges from the cold
 % guess over the full 3000 s arc (the linearization is invalid that far out).
-N_short     = 30;
+N_short     = 601;
 tmeas_short = tmeas(1:N_short);
 meas_short  = measurements(1:N_short, :);
 LST_short   = LST(1:N_short);
@@ -89,9 +89,18 @@ P_glsdc = inv(Lambda_glsdc);
 
 lambda_ff = 0.995;
 dynamics = @(t, y) twobody_STM(t, y, mu);
-[rls_estimate, Lambda_rls] = rls_ff(dynamics, x0hat, measurements, lambda_ff, R, ...
-                                    tmeas, maxiter, R_obsv, LST, obsv_lat);
+[rls_estimate, Lambda_rls] = rls_ff(dynamics, x0hat, measurements, lambda_ff, R, tmeas, R_obsv, LST, obsv_lat);
 P_rls = inv(Lambda_rls);
+
+% Propagate estimated initial state forward for RMSE comparison
+prop_opts = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
+[~, x_rls_traj] = ode45(@(t, y) twobody(t, y, mu), tmeas, rls_estimate, prop_opts);
+
+rls_error = measured_states - x_rls_traj;
+pos_rmse_rls = sqrt(mean(sum(rls_error(:, 1:3).^2, 2)));
+vel_rmse_rls = sqrt(mean(sum(rls_error(:, 4:6).^2, 2)));
+
+fprintf('RLS-FF: pos RMSE = %.4f km, vel RMSE = %.4f km/s\n', pos_rmse_rls, vel_rmse_rls);
 
 %% Monte Carlo GLSDC Method
 nruns = 1000;
@@ -122,7 +131,7 @@ mc_rmse_pos = sqrt(mean(sum(mc_err(:,1:3).^2, 2)));
 %% EKF 
 
 % Initial covariance — square of order of magnitude of initial guess error
-P0 = diag([3E5, 3E5, 3E5, 3E1, 3E1, 3E1]);
+P0 = diag([1E5, 1E5, 1E5, 1E1, 1E1, 1E1]);
 
 % Process noise covariance — high confidence in dynamics
 % Q = eye(6) * 1E-8;
@@ -148,7 +157,7 @@ end
 
 %% UKF
 
-P0 = diag([3E5, 3E5, 3E5, 3E1, 3E1, 3E1]);
+P0 = diag([1E5, 1E5, 1E5, 1E1, 1E1, 1E1]);
 % Q  = eye(6) * 1E-8;
 Q = diag([1e-9, 1e-9, 1e-9, 1e-6, 1e-6, 1e-6]);
 
