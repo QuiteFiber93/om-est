@@ -176,7 +176,7 @@ end
 %% Warm starting EKF and UKF
 
 % Perform GLSDC for first ~30 time steps
-N_warm = 60;
+N_warm = 30;
 tmeas_warm = tmeas(1:N_warm);
 meas_warm  = measurements(1:N_warm, :);
 LST_warm   = LST(1:N_warm);
@@ -190,7 +190,7 @@ prop_opts = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
 x_warm_start = x0_warm_prop(end, :)';
 
 % Inflate slightly to avoid overconfidence from the batch
-P0_warm = diag([1, 1, 1, 1E-2, 1E-2, 1E-2]);
+P0_warm = 10 * inv(Lambda_warm);
 
 % Run filters from t = tmeas(N_warm) onward
 tmeas_post = tmeas(N_warm+1:end);
