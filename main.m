@@ -1,7 +1,7 @@
 %% Initial Conditions and Constants
 clear; clc; close all;
-r0 = [7000; 1000; 200]; % km
-v0 = [4; 7; 2]; % km/s
+r0 = [6552; 1155; -1907]; % km (550 km circular LEO)
+v0 = [2.1; 0.36; 7.3]; 
 y0 = [r0; v0]; % Combined initial state
 
 % Physical
@@ -17,14 +17,14 @@ LST0 = deg2rad(10); % Observer local siderial time
 tspan = [0, 3000];
 
 % time values for measurements
-delta_t = 5;
-tmeas = 0:delta_t:3000;
+delta_t = 1;
+tmeas = 0:delta_t:600;
 
 % Computing LST at tmeas
 LST = LST0 + omega_E * tmeas;
 
 % Noise Covariance
-sigma_rho = 1; % km
+sigma_rho = 0.1; % km
 sigma_az = deg2rad(0.01); % rad
 sigma_el = deg2rad(0.01); % rad
 R = diag([sigma_rho^2, sigma_az^2, sigma_el^2]);
@@ -60,7 +60,7 @@ h_cords_true_motion = horizontal_coordinates(rho_obsv_true_motion);
 
 
 %% Batched Least Squares
-r0hat = [6990; 1; 1];
+r0hat = [6000; 1000; -2000];
 v0hat = [1; 1; 1];
 x0hat = [r0hat; v0hat];
 
@@ -87,7 +87,7 @@ P_glsdc = inv(Lambda_glsdc);
 
 %% RLS w FF
 
-lambda_ff = 0.99;
+lambda_ff = 0.995;
 dynamics = @(t, y) twobody_STM(t, y, mu);
 [rls_estimate, Lambda_rls] = rls_ff(dynamics, x0hat, measurements, lambda_ff, R, ...
                                     tmeas, maxiter, R_obsv, LST, obsv_lat);
@@ -176,14 +176,13 @@ end
 %% Warm starting EKF and UKF
 
 % Perform GLSDC for first ~30 time steps
-N_warm = 40;
+N_warm = 60;
 tmeas_warm = tmeas(1:N_warm);
 meas_warm  = measurements(1:N_warm, :);
 LST_warm   = LST(1:N_warm);
 
 [x0_warm, Lambda_warm] = glsdc(dynamics, x0hat, meas_warm, tol, R, ...
                                tmeas_warm, maxiter, R_obsv, LST_warm, obsv_lat);
-P0_warm = inv(Lambda_warm);
 
 prop_opts = odeset('RelTol', 1E-10, 'AbsTol', 1E-12);
 [~, x0_warm_prop] = ode45(@(t,y) twobody(t,y,mu), ...
@@ -251,3 +250,115 @@ rmse_pos_tail  = [ekf_tail_pos; ekf_warm_pos; ukf_tail_pos; ukf_warm_pos];
 rmse_vel_tail  = [ekf_tail_vel; ekf_warm_vel; ukf_tail_vel; ukf_warm_vel];
 rmse_table_warm = table(estimator_tail, rmse_pos_tail, rmse_vel_tail);
 disp(rmse_table_warm)
+
+
+%% Figure 1: Pass Geometry — Elevation vs Time
+figure('Position', [100 100 600 300])
+% Compute elevation over the pass
+el_deg = rad2deg(h_cords_true_motion(:, 3));
+plot(t, el_deg, 'b', 'LineWidth', 1.5)
+hold on
+yline(0, 'k--', 'LineWidth', 1, 'DisplayName', 'Horizon')
+% Shade the measurement window
+xregion = [tmeas(1), tmeas(end)];
+patch([xregion(1) xregion(2) xregion(2) xregion(1)], ...
+      [-10 -10 max(el_deg)+5 max(el_deg)+5], ...
+      [0.9 0.95 1], 'EdgeColor', 'none', 'FaceAlpha', 0.5, ...
+      'HandleVisibility', 'off')
+hold off
+xlabel('Time (s)')
+ylabel('Elevation (deg)')
+title('Satellite Elevation During Pass')
+ylim([-5 max(el_deg)+5])
+xlim([0 tspan(2)])
+grid on
+legend('Elevation', 'Horizon', 'Location', 'south')
+exportgraphics(gcf, 'Images/pass_geometry.png', 'Resolution', 300)
+
+%% Figure 2: Measurements vs Truth (compact 3-panel)
+figure('Position', [100 100 700 500])
+
+subplot(3,1,1)
+plot(t, h_cords_true_motion(:,1), 'b', 'LineWidth', 1)
+hold on
+scatter(tmeas, measurements(:,1), 3, 'r', 'filled')
+hold off
+ylabel('Range (km)')
+title('Ground Station Measurements vs Truth')
+legend('Truth', 'Measurements', 'Location', 'best')
+grid on
+
+subplot(3,1,2)
+plot(t, rad2deg(h_cords_true_motion(:,2)), 'b', 'LineWidth', 1)
+hold on
+scatter(tmeas, rad2deg(measurements(:,2)), 3, 'r', 'filled')
+hold off
+ylabel('Azimuth (deg)')
+grid on
+
+subplot(3,1,3)
+plot(t, rad2deg(h_cords_true_motion(:,3)), 'b', 'LineWidth', 1)
+hold on
+scatter(tmeas, rad2deg(measurements(:,3)), 3, 'r', 'filled')
+hold off
+ylabel('Elevation (deg)')
+xlabel('Time (s)')
+grid on
+
+exportgraphics(gcf, 'Images/measurements_compact.png', 'Resolution', 300)
+
+%% Figure 3: EKF vs UKF Position Error (side by side)
+figure('Position', [100 100 900 600])
+labels = {'x', 'y', 'z'};
+
+for i = 1:3
+    % EKF column
+    subplot(3,2,2*i-1)
+    hold on
+    plot(tmeas, ekf_error(:,i), 'b', 'LineWidth', 0.8)
+    plot(tmeas, sigma_bounds(:,i), 'r--', 'LineWidth', 1)
+    plot(tmeas, -sigma_bounds(:,i), 'r--', 'LineWidth', 1)
+    hold off
+    ylabel(sprintf('%s Error (km)', labels{i}))
+    grid on
+    if i == 1; title('EKF'); end
+    if i == 3; xlabel('Time (s)'); end
+    
+    % UKF column
+    subplot(3,2,2*i)
+    hold on
+    plot(tmeas, ukf_error(:,i), 'b', 'LineWidth', 0.8)
+    plot(tmeas, sigma_bounds_ukf(:,i), 'r--', 'LineWidth', 1)
+    plot(tmeas, -sigma_bounds_ukf(:,i), 'r--', 'LineWidth', 1)
+    hold off
+    grid on
+    if i == 1; title('UKF'); end
+    if i == 3; xlabel('Time (s)'); end
+end
+
+sgtitle('Position Estimation Error with 3\sigma Bounds')
+exportgraphics(gcf, 'Images/ekf_vs_ukf_position.png', 'Resolution', 300)
+
+%% Figure 4: RSS Position Error — All Estimators
+figure('Position', [100 100 700 350])
+
+% RSS position error = sqrt(ex^2 + ey^2 + ez^2)
+rss_ekf = sqrt(sum(ekf_error(:,1:3).^2, 2));
+rss_ukf = sqrt(sum(ukf_error(:,1:3).^2, 2));
+
+semilogy(tmeas, rss_ekf, 'b', 'LineWidth', 1.2, 'DisplayName', 'EKF')
+hold on
+semilogy(tmeas, rss_ukf, 'r', 'LineWidth', 1.2, 'DisplayName', 'UKF')
+
+% If you have the warm-started filters, add them:
+% rss_ekf_warm = sqrt(sum((measured_states_post(:,1:3) - xhat_ekf_warm(:,1:3)).^2, 2));
+% semilogy(tmeas_post, rss_ekf_warm, 'b--', 'LineWidth', 1.2, 'DisplayName', 'EKF (GLSDC warm)')
+
+hold off
+xlabel('Time (s)')
+ylabel('RSS Position Error (km)')
+title('Position Estimation Convergence')
+legend('Location', 'northeast')
+grid on
+exportgraphics(gcf, 'Images/rss_position_error.png', 'Resolution', 300)
+
